@@ -1,15 +1,48 @@
 
+
 from collections import defaultdict
 import csv 
 
 import pdb
 import gensim
-from gensim import matutils
+from gensim import matutils, corpora
 from gensim.models.ldamodel import LdaModel
 import pandas as pd
 import nltk
 
+# for language classification
 import langid
+
+tags = ["pap smear",
+        "pap test",
+        "HPV",
+        "human papillomavirus",
+        "HPV vaccination",
+        "Gardasil",
+        "cervical cancer",
+        "#GoingToTheDoctor",
+        "#WomensHealth",
+        "colonoscopy",
+        "cancer prevention",
+        "cancer screening",
+        "mammogram",
+        "vaxx",
+        "#fightcancer",
+        "#stopcancerb4itstarts",
+        "#screened",
+        "#vaccinated",
+        "#crc"]
+
+def which_tags(tweet):
+    tweet_lowercased = tweet.lower()
+    tag_set = []
+    for t in tags: 
+        if t.lower() in tweet_lowercased:
+            tag_set.append(t)
+    if len(tag_set) == 0:
+        tag_set.append("other")
+
+    return tag_set
 
 def read_data(path="CancerReport-clean.txt"):
     data = pd.read_csv(path, delimiter="\t")
@@ -31,6 +64,14 @@ def fit_lda(X, vocab, num_topics=10, passes=20, alpha=0.001):
                     passes=passes, alpha=alpha, 
                     id2word=dict([(i, s) for i, s in enumerate(vocab)]))
 
+def gen_lda_model(toked_tweets, num_topics=10):
+    dictionary = corpora.Dictionary(toked_tweets)
+    gensim_corpus = [dictionary.doc2bow(tweet) for tweet in toked_tweets]
+    lda = LdaModel(gensim_corpus, num_topics=num_topics,
+                    passes=10, alpha=0.001, id2word=dictionary)
+
+    return lda, gensim_corpus, dictionary 
+    
 def clean_data(original_path="CancerReport.txt", clean_path="CancerReport-clean.txt", 
                     en_only=True, THRESHOLD=.6):
     ''' 
@@ -63,7 +104,12 @@ def clean_data(original_path="CancerReport.txt", clean_path="CancerReport-clean.
                 if en_only and lang_pred[0] not in ("en", "de", "sq") and lang_pred[1] > THRESHOLD:
                     not_english.append(cols_of_interest)
                 else:
+                    #if not contains_tag(cols_of_interest[1]):
+                    #    pdb.set_trace()
+
+
                     out_str.append(cols_of_interest)
+                    #pdb.set_trace()
             
     if en_only:
         clean_path = clean_path.replace(".txt", "-en.txt")
@@ -74,7 +120,7 @@ def clean_data(original_path="CancerReport.txt", clean_path="CancerReport-clean.
         csv_writer.writerows(out_str)
 
 
-def build_gensim_corpus(tweets, at_least=5):
+def build_gensim_corpus(tweets, at_least=5, split_up_by_tag=False):
     # record frequencies
     STOP_WORDS = nltk.corpus.stopwords.words('english')
 
@@ -87,19 +133,31 @@ def build_gensim_corpus(tweets, at_least=5):
         for token in t:
             frequency[token] += 1
 
-   
+    # only used if we split by tags though.
+    tags_to_tweets = defaultdict(list) 
     cleaned_toked = []
-    for tweet in toked_tweets:
+    for tweet_idx, tweet in enumerate(toked_tweets):
         cur_t = []
+
         for token in tweet:
             if (frequency[token] >= at_least and 
                 not token in STOP_WORDS and
                 len(token) > 1):
                     cur_t.append(token)
 
+
         if len(cur_t) > 0:
-            cleaned_toked.append(cur_t)
-        #pdb.set_trace() 
+            if not split_up_by_tag:
+                cleaned_toked.append(cur_t)
+            else: 
+                orig_tweet = tweets[tweet_idx]
+                tag_set = which_tags(orig_tweet)
+                for t in tag_set:
+                    tags_to_tweets[t].append(cur_t)
+
+
+    if split_up_by_tag:
+        return tags_to_tweets
 
     return cleaned_toked
 
