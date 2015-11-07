@@ -9,6 +9,7 @@ from gensim.models.ldamodel import LdaModel
 import pandas as pd
 import nltk
 
+import langid
 
 def read_data(path="CancerReport-clean.txt"):
     data = pd.read_csv(path, delimiter="\t")
@@ -30,16 +31,21 @@ def fit_lda(X, vocab, num_topics=10, passes=20, alpha=0.001):
                     passes=passes, alpha=alpha, 
                     id2word=dict([(i, s) for i, s in enumerate(vocab)]))
 
-def clean_data(original_path="CancerReport.txt", clean_path="CancerReport-clean.txt"):
+def clean_data(original_path="CancerReport.txt", clean_path="CancerReport-clean.txt", 
+                    en_only=True, THRESHOLD=.6):
     ''' 
-    this function reads and cleans the data originally provided data, 
+    Read and clean the data originally provided data, 
     which was messy in that it often contained an inconsistent number 
     of columns, due to the tweets often containing tabs (which were 
     also being used as delimiters!). here we spit out a new file, 
     where we just skip those lines. 
+
+    If the en_only flag is true here, we skip lines not classified
+    by langid as English. 
     '''
     expected_num_cols = 40
     skipped_count = 0
+    not_english = []
     out_str = [["id", "tweet", "date", "tweeter_name", "tweeter_info"]]
     cols = [0, 1, 2, 14, 16]
     with open(original_path, 'rU') as orig_data:
@@ -47,9 +53,22 @@ def clean_data(original_path="CancerReport.txt", clean_path="CancerReport-clean.
         for line in csv_reader:
             if len(line) != expected_num_cols:
                 skipped_count += 1
-            else:
-                out_str.append([line[j] for j in cols])
-    
+            else: 
+                cols_of_interest = [line[j] for j in cols]
+                lang_pred = langid.classify(cols_of_interest[1])
+                # note that I'm including "de" here because for whatever 
+                # reason langid kept making this mistake on english tweets. 
+                # I think we should see relatively few actual German
+                # tweets anyway.
+                if en_only and lang_pred[0] not in ("en", "de", "sq") and lang_pred[1] > THRESHOLD:
+                    not_english.append(cols_of_interest)
+                else:
+                    out_str.append(cols_of_interest)
+            
+    if en_only:
+        clean_path = clean_path.replace(".txt", "-en.txt")
+
+    #pdb.set_trace()
     with open(clean_path, 'w') as out_f:
         csv_writer = csv.writer(out_f, delimiter="\t")
         csv_writer.writerows(out_str)
