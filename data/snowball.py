@@ -120,6 +120,17 @@ def clean_data(original_path="CancerReport.txt", clean_path="CancerReport-clean.
         csv_writer.writerows(out_str)
 
 
+def write_out_raw_tweets_with_tags(tags_to_raw_tweets, output_path="tweets-by-keyword.csv"):
+    out_str = [["hashtag", "tweet"]]
+    for tag, tweets_for_tag in tags_to_raw_tweets.items():
+        for t in tweets_for_tag:
+            out_str.append([tag, t])
+
+
+    with open(output_path, 'w') as out_f:  
+        w = csv.writer(out_f, delimiter="\t")
+        w.writerows(out_str)
+
 def build_gensim_corpus(tweets, at_least=5, split_up_by_tag=False):
     # record frequencies
     STOP_WORDS = nltk.corpus.stopwords.words('english')
@@ -135,6 +146,8 @@ def build_gensim_corpus(tweets, at_least=5, split_up_by_tag=False):
 
     # only used if we split by tags though.
     tags_to_tweets = defaultdict(list) 
+    # also store raw tweets
+    tags_to_raw_tweets = defaultdict(list)
     cleaned_toked = []
     for tweet_idx, tweet in enumerate(toked_tweets):
         cur_t = []
@@ -154,10 +167,10 @@ def build_gensim_corpus(tweets, at_least=5, split_up_by_tag=False):
                 tag_set = which_tags(orig_tweet)
                 for t in tag_set:
                     tags_to_tweets[t].append(cur_t)
-
+                    tags_to_raw_tweets[t].append(orig_tweet)
 
     if split_up_by_tag:
-        return tags_to_tweets
+        return tags_to_tweets, tags_to_raw_tweets
 
     return cleaned_toked
 
