@@ -33,12 +33,24 @@ tags = ["pap smear",
         "#vaccinated",
         "#crc"]
 
-def which_tags(tweet):
+
+def which_tags(tweet, merge_list=None):
+    if merge_list is None: 
+        # @TODO extend!
+        merge_list = [("pap smear", "pap test"), 
+                      ("HPV", "human papillomavirus"), 
+                      ("cancer prevention", "cancer screening")]
+
     tweet_lowercased = tweet.lower()
     tag_set = []
     for t in tags: 
         if t.lower() in tweet_lowercased:
+            for to_merge in merge_list:
+                if t in to_merge:
+                    t = to_merge[0]
+                    break
             tag_set.append(t)
+    tag_set = list(set(tag_set)) 
     if len(tag_set) == 0:
         tag_set.append("other")
 
@@ -72,6 +84,65 @@ def gen_lda_model(toked_tweets, num_topics=10):
 
     return lda, gensim_corpus, dictionary 
     
+
+def _seems_to_be_about_soccer(tweet):  
+    ''' does this tweet seem to be about soccer???'''
+    terms = ["worldcup", "ger", "usavcrc", "fra", "italia", 
+                "mexvcrc", "#mexvcrc", "nedvscrc", "#nedvscrc", 
+                "nedcrc", "#nedcrc", "itavscrc", "#itavscrc", 
+                "uruvscrc", "#uruvscrc", "worldcup2014", "#worldcup2014",
+                "uruguay"]
+    return any([t.lower() in terms for t in tweet])
+
+def gen_data_for_slda(original_path="CancerReport.txt", 
+                      clean_path="CancerReport-clean-all-data.txt", 
+                      en_only=True, THRESHOLD=.6):
+    '''
+    Redundant with clean_data below, but keeps all headers, basically.
+    Also performs more aggressive filtering of non-en messages.
+    '''
+    headers = ['tweet_id', 'tweet_text', 'tweet_created_at', 'in_reply_to_status_id_str', 'in_reply_to_screen_name', 'retweet_count', 'favorite_count', 'machine_translated_language', 'geo_lat', 'geo_long', 'country_code', 'location_full_name', 'source', 'truncated', 'screen_name', 'user_created_at', 'person_name', 'statuses_count', 'friends_count', 'followers_count', 'user_profile_location', 'user_profile_language', 'media_url', 'expanded_urls', 'tweet_urls', 'hashtag_text', 'usermentions_screen_name', 'retweet', 'retweet_id_str', 'retweet_text', 'retweet_created_at', 'retweet_screen_name', 'retweet_user_created_at', 'retweet_person_name', 'retweet_statuses_count', 'retweet_friends_count', 'retweet_followers_count', 'retweet_urls', 'retweet_hashtag_text', 'retweet_usermentions_screen_name']
+    out_str = [headers]
+    tweet_idx = headers.index("tweet_text")
+    expected_num_cols = len(headers) # 40.
+    skipped_count = 0
+    ignored = []
+
+    #tags = [snowball.which_tags(t) for t in raw_tweets]
+    #raw_tweets = [t for i,t in enumerate(raw_tweets) if 
+    #                    not "#crc" in tags[i]]
+
+    #tokenized_tweets = [word_tokenize(tw) for tw in raw_tweets]
+    with open(original_path, 'rU') as orig_data:
+        csv_reader = csv.reader(orig_data, delimiter="\t")
+        for line in csv_reader:
+            if len(line) != expected_num_cols:
+                skipped_count += 1
+            else: 
+                tweet = line[tweet_idx]
+                tags = which_tags(tweet)
+                lang_pred = langid.classify(tweet)
+                # note that I'm including "de" here because for whatever 
+                # reason langid kept making this mistake on english tweets. 
+                # I think we should see relatively few actual German
+                # tweets anyway.
+                #### added 'fr' 12/2
+                if (en_only and lang_pred[0] not in ("en", "de", "sq", "fr") and 
+                        lang_pred[1] > THRESHOLD) or (_seems_to_be_about_soccer(tweet)) or (
+                        "#crc" in tags):
+                    ignored.append(line[1])
+                else:
+                    out_str.append(line)
+    
+    if en_only:
+        clean_path = clean_path.replace(".txt", "-en.txt")
+
+    with open(clean_path, 'w') as out_f:
+        csv_writer = csv.writer(out_f, delimiter="\t")
+        csv_writer.writerows(out_str)
+
+    return out_str, ignored
+
 def clean_data(original_path="CancerReport.txt", clean_path="CancerReport-clean.txt", 
                     en_only=True, THRESHOLD=.6):
     ''' 
@@ -101,7 +172,8 @@ def clean_data(original_path="CancerReport.txt", clean_path="CancerReport-clean.
                 # reason langid kept making this mistake on english tweets. 
                 # I think we should see relatively few actual German
                 # tweets anyway.
-                if en_only and lang_pred[0] not in ("en", "de", "sq") and lang_pred[1] > THRESHOLD:
+                #### added 'fr' 12/2
+                if en_only and lang_pred[0] not in ("en", "de", "sq", "fr") and lang_pred[1] > THRESHOLD:
                     not_english.append(cols_of_interest)
                 else:
                     #if not contains_tag(cols_of_interest[1]):
