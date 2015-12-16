@@ -9,7 +9,9 @@ from gensim import matutils, corpora
 from gensim.models.ldamodel import LdaModel
 import pandas as pd
 import nltk
-
+import statsmodels 
+import matplotlib as plt  
+import seaborn as sns 
 # for language classification
 import langid
 
@@ -143,6 +145,53 @@ def gen_data_for_slda(original_path="CancerReport.txt",
 
     return out_str, ignored
 
+def _count_up_retweets(grouped_retweets):
+    '''
+    attempt to count the number of retweets 
+    corresponding to the original tweets pointed 
+    to by those comprising 'grouped_retweets'
+    (the grouping here is assumed to be by 
+    retweet_id_str). this is probably imperfect! 
+    
+    my understanding is that the retweet counts 
+    store the # of retweets *at the time when the 
+    retweet under consideration was collected*. 
+    therefore, many of these are 0, because they were 
+    the first retweet. as a somewhat heuristic proxy, 
+    I'm here taking the max over the max(retweet counts) 
+    and the number of reweets in our corpus. 
+    '''
+    orig_tweet_texts, counts = [], []
+    for orig_tweet_id, cur_retweets in grouped_retweets:
+        cur_count = cur_retweets["retweet_count"].max() 
+        cur_count = max(cur_count, cur_retweets.shape[0])
+        counts.append(cur_count)
+        #
+        orig_tweet_texts.append(cur_retweets["retweet_text"].values[0])
+
+    return orig_tweet_texts, counts 
+
+def retweet_analysis():
+    tweet_data = pd.read_csv("CancerReport-clean-all-data-en.txt", delimiter="\t", low_memory=False)
+    
+    # read out and process retweets 
+    retweets = tweet_data[tweet_data["retweet"] == True]
+    grouped_retweets = retweets.groupby("retweet_id_str")
+    orig_tweet_texts, retweet_counts = _count_up_retweets(grouped_retweets)
+
+    primary_tweets = tweet_data[tweet_data["retweet"] == False]
+    # now merge tweet sets (retweeted and not)
+    orig_tweet_texts.extend(primary_tweets["tweet_text"].values)
+    retweet_counts.extend([0]*primary_tweets.shape[0])
+
+    # topic modeling 
+    toked_tweets, kept_indices = snowball.build_gensim_corpus(orig_tweet_texts, split_up_by_tag=False)
+    lda, gensim_corpus, dict_ = snowball.gen_lda_model(toked_tweets)
+    inferred_topic_matrix = lda.inference(gensim_corpus)[0]
+    # remove the tweets that were cleaned/not included in gensim corpus
+    retweet_counts = [retweet_counts[idx] for idx in kept_indices]
+    orig_tweet_texts = [orig_tweet_texts[idx] for idx in kept_indices]
+
 def clean_data(original_path="CancerReport.txt", clean_path="CancerReport-clean.txt", 
                     en_only=True, THRESHOLD=.6):
     ''' 
@@ -221,6 +270,7 @@ def build_gensim_corpus(tweets, at_least=5, split_up_by_tag=False):
     # also store raw tweets
     tags_to_raw_tweets = defaultdict(list)
     cleaned_toked = []
+    kept_indices = [] # keep track of the tweets we hold on to
     for tweet_idx, tweet in enumerate(toked_tweets):
         cur_t = []
 
@@ -232,6 +282,7 @@ def build_gensim_corpus(tweets, at_least=5, split_up_by_tag=False):
 
 
         if len(cur_t) > 0:
+            kept_indices.append(tweet_idx)
             if not split_up_by_tag:
                 cleaned_toked.append(cur_t)
             else: 
@@ -240,11 +291,14 @@ def build_gensim_corpus(tweets, at_least=5, split_up_by_tag=False):
                 for t in tag_set:
                     tags_to_tweets[t].append(cur_t)
                     tags_to_raw_tweets[t].append(orig_tweet)
+        
 
     if split_up_by_tag:
         return tags_to_tweets, tags_to_raw_tweets
 
-    return cleaned_toked
+    return cleaned_toked, kept_indices
+
+
 
 
 
