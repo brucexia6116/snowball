@@ -53,7 +53,7 @@ def train_supervised_model():
         # train up model for this tag
         m = copy.deepcopy(base_model)
         print("training language model for tag %s with %s examples..." % (tag, len(tweets_for_tag)))
-        m.train(tweets_for_tag, iter=5)
+        m.train(tweets_for_tag)
         print("ok.")
         tags_to_models[tag] = m 
 
@@ -238,20 +238,37 @@ def top_words_for_model(topics_to_models):
     # [topics_to_models2[j].n_similarity(['vaccine'], ['autism']) for j in range(10)]
     pass 
 
-def print_top_tweets_for_topics(phi, raw_tweets, pi, n=10):
+def print_top_tweets_for_topics(phi, raw_tweets, pi, n=10, out_path=None):
     print("*** top tweets for topics ***")
+    outf = None 
+    if out_path is not None: 
+        outf = open(out_path, 'wt')
+
     for topic_idx in range(phi.shape[1]):
         
         top_tweet_indices = (1-phi[:,topic_idx]).argsort()[:n]
         print("-- topic %s (pi=%s) --" % (topic_idx, pi[topic_idx]))
+        if outf is not None: 
+            outf.write("-- topic %s (pi=%s) --\n" % (topic_idx, pi[topic_idx]))
+
+
         for idx in top_tweet_indices:
             print(raw_tweets[idx])
+            if outf is not None: 
+                outf.write(raw_tweets[idx])
+                outf.write("\n")
+        
+      
+
+        if outf is not None: 
+            outf.write("\n\n")
         print("--\n")
     print("\n***\n\n")
 
+''' @TODO update to use "CancerReport-clean-all-data-en.txt" '''
 def train_unsupervised_model(k=10, alpha=.1, max_iters=25, 
                                 convergence_threshold=.001, 
-                                baseline=False):
+                                baseline=False, silent=False):
     '''
     phi is the documents-to-topics matrix  
     '''
@@ -259,7 +276,7 @@ def train_unsupervised_model(k=10, alpha=.1, max_iters=25,
     base_model = None
 
     D = snowball.read_data()
-    raw_tweets = D['tweet']
+    raw_tweets = D['tweet_text']
 
     ## 12/1 -- filter?
     tags = [snowball.which_tags(t) for t in raw_tweets]
@@ -292,8 +309,9 @@ def train_unsupervised_model(k=10, alpha=.1, max_iters=25,
     # initial topic probability estimates
     pi = estimate_pi(phi)
 
-    print("initial assignments (random)...")
-    print_top_tweets_for_topics(phi, raw_tweets, pi)
+    if not silent:
+        print("initial assignments (random)...")
+        print_top_tweets_for_topics(phi, raw_tweets, pi)
 
     iter_ = 0
     converged = False 
@@ -314,7 +332,8 @@ def train_unsupervised_model(k=10, alpha=.1, max_iters=25,
         #######
         # assess convergence
         #######
-        print_top_tweets_for_topics(phi, raw_tweets, pi, n=20)
+        if not silent:
+            print_top_tweets_for_topics(phi, raw_tweets, pi, n=20)
         cur_LL = LL(topics_to_models, pi, phi, tokenized_tweets)
         print("finished iter: %s; LL: %s" % (iter_, cur_LL))
         #print("finished iter: %s" % iter_)
@@ -322,4 +341,4 @@ def train_unsupervised_model(k=10, alpha=.1, max_iters=25,
         iter_ += 1
 
     # idx0 = (-1* phi[:,0]).argsort()[:50]
-    return raw_tweets, tokenized_tweets, phi, topics_to_models
+    return raw_tweets, tokenized_tweets, phi, pi, topics_to_models
